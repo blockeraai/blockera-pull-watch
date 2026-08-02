@@ -29,6 +29,9 @@ jobs:
               with:
                   token: ${{ secrets.BLOCKERABOT_PAT }}
 
+            - name: Sync latest state file
+              run: git pull --rebase origin master
+
             - name: Watch sync pull requests
               env:
                   GH_TOKEN: ${{ secrets.BLOCKERABOT_PAT }}
@@ -36,17 +39,9 @@ jobs:
                   SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
               run: node scripts/watch-sync-prs.mjs
 
-            - name: Commit state changes
-              run: |
-                  git config user.name "${{ secrets.BLOCKERABOT_USERNAME }}"
-                  git config user.email "${{ secrets.BLOCKERABOT_EMAIL }}"
-                  git add data/slack-messages.json
-
-                  if git diff --staged --quiet; then
-                      echo "No state changes to commit."
-                      exit 0
-                  fi
-
-                  git commit -m "chore: update sync PR Slack message state"
-                  git pull --rebase origin master
-                  git push origin master
+            - name: Push state changes
+              env:
+                  GH_TOKEN: ${{ secrets.BLOCKERABOT_PAT }}
+                  GITHUB_REPOSITORY: ${{ github.repository }}
+                  GITHUB_REF_NAME: ${{ github.ref_name }}
+              run: node scripts/push-state.mjs
