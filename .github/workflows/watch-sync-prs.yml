@@ -29,15 +29,15 @@ jobs:
 
             - name: Watch sync pull requests
               env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GH_TOKEN: ${{ secrets.BLOCKERABOT_PAT }}
                   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
                   SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
               run: node scripts/watch-sync-prs.mjs
 
             - name: Commit state changes
               run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git config user.name ${{ secrets.BLOCKERABOT_USERNAME }}
+                  git config user.email ${{ secrets.BLOCKERABOT_EMAIL }}
                   git add data/slack-messages.json
 
                   if git diff --staged --quiet; then

@@ -47,7 +47,7 @@ Add these secrets in the `blockera-pull-watch` repository settings:
 
 | Secret | Description |
 | --- | --- |
-| `GITHUB_TOKEN` | GitHub PAT with `repo` (or org read) access to the watched repositories |
+| `BLOCKERABOT_PAT` | GitHub PAT with `repo` (or org read) access to the watched repositories |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`) with `chat:write` scope |
 | `SLACK_CHANNEL_ID` | Target Slack channel ID (for example `C0123456789`) |
 
@@ -71,7 +71,7 @@ Other repositories can trigger an immediate scan with `repository_dispatch`:
 - name: Notify pull-watch
   uses: peter-evans/repository-dispatch@v3
   with:
-      token: ${{ secrets.GITHUB_TOKEN }}
+      token: ${{ secrets.BLOCKERABOT_PAT }}
       repository: blockeraai/blockera-pull-watch
       event-type: sync-pr-updated
 ```
