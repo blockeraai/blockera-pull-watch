@@ -63,6 +63,18 @@ Add these secrets in the `blockera-pull-watch` repository settings:
 
 Use **Actions → Watch Sync Package Pull Requests → Run workflow** to trigger a scan immediately.
 
+After the first successful run, `data/slack-messages.json` is committed back to the repository. If this commit/push fails, reruns will post duplicate Slack messages because prior notifications are not tracked.
+
+## Troubleshooting duplicate Slack messages
+
+Duplicates usually mean state was not persisted between runs. Check the workflow log for the **Commit state changes** step and confirm:
+
+1. `Loaded N tracked Slack message(s) from state.` shows `N > 0` on reruns
+2. The commit step pushed `data/slack-messages.json` to `master`
+3. `BLOCKERABOT_PAT` has write access to `blockera-pull-watch`
+
+If duplicates were already posted, delete the extra Slack messages manually, then rerun once so the workflow can save the correct state.
+
 ## Optional instant updates
 
 Other repositories can trigger an immediate scan with `repository_dispatch`:

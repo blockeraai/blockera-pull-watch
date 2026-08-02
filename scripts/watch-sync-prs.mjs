@@ -256,6 +256,9 @@ async function main() {
 	const titlePattern = new RegExp( config.titlePattern );
 	let stateChanged = false;
 
+	const trackedCount = Object.keys( state.messages ).length;
+	console.log( `Loaded ${ trackedCount } tracked Slack message(s) from state.` );
+
 	const trackedKeys = new Set( Object.keys( state.messages ) );
 	const activeKeys = new Set();
 

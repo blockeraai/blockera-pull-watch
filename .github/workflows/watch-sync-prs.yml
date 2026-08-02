@@ -26,6 +26,8 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.BLOCKERABOT_PAT }}
 
             - name: Watch sync pull requests
               env:
@@ -36,8 +38,8 @@ jobs:
 
             - name: Commit state changes
               run: |
-                  git config user.name ${{ secrets.BLOCKERABOT_USERNAME }}
-                  git config user.email ${{ secrets.BLOCKERABOT_EMAIL }}
+                  git config user.name "${{ secrets.BLOCKERABOT_USERNAME }}"
+                  git config user.email "${{ secrets.BLOCKERABOT_EMAIL }}"
                   git add data/slack-messages.json
 
                   if git diff --staged --quiet; then
@@ -46,4 +48,5 @@ jobs:
                   fi
 
                   git commit -m "chore: update sync PR Slack message state"
-                  git push
+                  git pull --rebase origin master
+                  git push origin master
