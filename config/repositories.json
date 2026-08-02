@@ -1,0 +1,9 @@
+{
+	"titlePattern": "^Sync package from .+ Repo$",
+	"repositories": [
+		"blockeraai/blockera",
+		"blockeraai/blockera-pro",
+		"blockeraai/blockera-one",
+		"blockeraai/blockera-site-toolkit"
+	]
+}

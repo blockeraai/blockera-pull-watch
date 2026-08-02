@@ -1,0 +1,49 @@
+name: Watch Sync Package Pull Requests
+
+on:
+    schedule:
+        # Poll every 10 minutes for new sync PRs and merged/closed PRs.
+        - cron: '*/10 * * * *'
+
+    workflow_dispatch:
+
+    repository_dispatch:
+        types:
+            - sync-pr-updated
+
+permissions:
+    contents: write
+
+concurrency:
+    group: watch-sync-prs
+    cancel-in-progress: false
+
+jobs:
+    watch-sync-prs:
+        name: Track Sync PRs and Notify Slack
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Watch sync pull requests
+              env:
+                  GH_TOKEN: ${{ secrets.GH_PAT }}
+                  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+                  SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+              run: node scripts/watch-sync-prs.mjs
+
+            - name: Commit state changes
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add data/slack-messages.json
+
+                  if git diff --staged --quiet; then
+                      echo "No state changes to commit."
+                      exit 0
+                  fi
+
+                  git commit -m "chore: update sync PR Slack message state"
+                  git push
