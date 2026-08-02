@@ -28,13 +28,13 @@ jobs:
               uses: actions/checkout@v4
               with:
                   token: ${{ secrets.BLOCKERABOT_PAT }}
-
-            - name: Sync latest state file
-              run: git pull --rebase origin master
+                  ref: master
 
             - name: Watch sync pull requests
               env:
                   GH_TOKEN: ${{ secrets.BLOCKERABOT_PAT }}
+                  GITHUB_REPOSITORY: ${{ github.repository }}
+                  GITHUB_REF_NAME: ${{ github.ref_name }}
                   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
                   SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
               run: node scripts/watch-sync-prs.mjs

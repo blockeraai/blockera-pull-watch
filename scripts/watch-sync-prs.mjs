@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchRemoteState, mergeStates } from './github-state.mjs';
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
 const ROOT = join( __dirname, '..' );
@@ -13,6 +14,9 @@ const ROOT = join( __dirname, '..' );
 const GH_TOKEN = process.env.GH_TOKEN;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID;
+const GITHUB_REPOSITORY =
+	process.env.GITHUB_REPOSITORY || 'blockeraai/blockera-pull-watch';
+const GITHUB_REF_NAME = process.env.GITHUB_REF_NAME || 'master';
 
 const STATE_PATH = join( ROOT, 'data', 'slack-messages.json' );
 const CONFIG_PATH = join( ROOT, 'config', 'repositories.json' );
@@ -29,6 +33,37 @@ function loadJson( path ) {
 
 function saveState( state ) {
 	writeFileSync( STATE_PATH, `${ JSON.stringify( state, null, '\t' ) }\n` );
+}
+
+async function loadState() {
+	const fileState = loadJson( STATE_PATH );
+
+	try {
+		const { sha, state: remoteState } = await fetchRemoteState( {
+			token: GH_TOKEN,
+			repository: GITHUB_REPOSITORY,
+			branch: GITHUB_REF_NAME,
+		} );
+
+		const mergedState = mergeStates( remoteState, fileState );
+		const trackedCount = Object.keys( mergedState.messages ).length;
+
+		console.log(
+			`Loaded ${ trackedCount } tracked Slack message(s) from remote state (${ sha?.slice( 0, 7 ) || 'new' }).`
+		);
+
+		saveState( mergedState );
+
+		return mergedState;
+	} catch ( error ) {
+		const trackedCount = Object.keys( fileState.messages ).length;
+
+		console.warn(
+			`Could not fetch remote state (${ error.message }), using local file with ${ trackedCount } message(s).`
+		);
+
+		return fileState;
+	}
 }
 
 function makeStateKey( repository, prNumber ) {
@@ -158,6 +193,35 @@ async function postSlackMessage( pr, repository ) {
 	return data.ts;
 }
 
+async function slackMessageExists( channel, slackTs ) {
+	const response = await fetch( 'https://slack.com/api/conversations.history', {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${ SLACK_BOT_TOKEN }`,
+			'Content-Type': 'application/json; charset=utf-8',
+		},
+		body: JSON.stringify( {
+			channel,
+			oldest: slackTs,
+			latest: slackTs,
+			inclusive: true,
+			limit: 1,
+		} ),
+	} );
+
+	const data = await response.json();
+
+	if ( ! data.ok ) {
+		throw new Error(
+			`Slack conversations.history failed: ${ data.error }`
+		);
+	}
+
+	return (
+		data.messages?.some( ( message ) => message.ts === slackTs ) ?? false
+	);
+}
+
 async function deleteSlackMessage( slackTs ) {
 	const response = await fetch( 'https://slack.com/api/chat.delete', {
 		method: 'POST',
@@ -244,6 +308,59 @@ async function updateSlackMessage( pr, repository, slackTs ) {
 	if ( ! data.ok && data.error !== 'message_not_found' ) {
 		throw new Error( `Slack chat.update failed: ${ data.error }` );
 	}
+
+	return data.ok;
+}
+
+function buildStateEntry( pr, repository, slackTs, existing = {} ) {
+	return {
+		...existing,
+		repository,
+		prNumber: pr.number,
+		title: pr.title,
+		status: getPRStatus( pr ),
+		url: pr.html_url,
+		slackTs,
+		channel: SLACK_CHANNEL_ID,
+		updatedAt: new Date().toISOString(),
+	};
+}
+
+async function syncTrackedSlackMessage( pr, repository, existing ) {
+	const channel = existing.channel || SLACK_CHANNEL_ID;
+	const status = getPRStatus( pr );
+	const messageExists = await slackMessageExists( channel, existing.slackTs );
+
+	if ( ! messageExists ) {
+		console.log(
+			`Slack message missing for ${ repository }#${ pr.number }, reposting...`
+		);
+
+		const slackTs = await postSlackMessage( pr, repository );
+
+		return {
+			changed: true,
+			entry: buildStateEntry( pr, repository, slackTs, existing ),
+		};
+	}
+
+	if ( existing.status !== status || existing.title !== pr.title ) {
+		console.log(
+			`Updating sync PR status: ${ repository }#${ pr.number } (${ existing.status } -> ${ status })`
+		);
+
+		await updateSlackMessage( pr, repository, existing.slackTs );
+
+		return {
+			changed: true,
+			entry: buildStateEntry( pr, repository, existing.slackTs, existing ),
+		};
+	}
+
+	return {
+		changed: false,
+		entry: existing,
+	};
 }
 
 async function main() {
@@ -252,12 +369,9 @@ async function main() {
 	requireEnv( 'SLACK_CHANNEL_ID', SLACK_CHANNEL_ID );
 
 	const config = loadJson( CONFIG_PATH );
-	const state = loadJson( STATE_PATH );
+	const state = await loadState();
 	const titlePattern = new RegExp( config.titlePattern );
 	let stateChanged = false;
-
-	const trackedCount = Object.keys( state.messages ).length;
-	console.log( `Loaded ${ trackedCount } tracked Slack message(s) from state.` );
 
 	const trackedKeys = new Set( Object.keys( state.messages ) );
 	const activeKeys = new Set();
@@ -271,7 +385,6 @@ async function main() {
 			const key = makeStateKey( repository, pr.number );
 			activeKeys.add( key );
 
-			const status = getPRStatus( pr );
 			const existing = state.messages[ key ];
 
 			if ( ! existing ) {
@@ -281,34 +394,23 @@ async function main() {
 
 				const slackTs = await postSlackMessage( pr, repository );
 
-				state.messages[ key ] = {
+				state.messages[ key ] = buildStateEntry(
+					pr,
 					repository,
-					prNumber: pr.number,
-					title: pr.title,
-					status,
-					url: pr.html_url,
-					slackTs,
-					channel: SLACK_CHANNEL_ID,
-					updatedAt: new Date().toISOString(),
-				};
+					slackTs
+				);
 				stateChanged = true;
 				continue;
 			}
 
-			if ( existing.status !== status || existing.title !== pr.title ) {
-				console.log(
-					`Updating sync PR status: ${ repository }#${ pr.number } (${ existing.status } -> ${ status })`
-				);
+			const synced = await syncTrackedSlackMessage(
+				pr,
+				repository,
+				existing
+			);
 
-				await updateSlackMessage( pr, repository, existing.slackTs );
-
-				state.messages[ key ] = {
-					...existing,
-					title: pr.title,
-					status,
-					url: pr.html_url,
-					updatedAt: new Date().toISOString(),
-				};
+			if ( synced.changed ) {
+				state.messages[ key ] = synced.entry;
 				stateChanged = true;
 			}
 		}
@@ -326,16 +428,14 @@ async function main() {
 		if ( status === 'open' ) {
 			activeKeys.add( key );
 
-			if ( tracked.status !== status || tracked.title !== pr.title ) {
-				await updateSlackMessage( pr, tracked.repository, tracked.slackTs );
+			const synced = await syncTrackedSlackMessage(
+				pr,
+				tracked.repository,
+				tracked
+			);
 
-				state.messages[ key ] = {
-					...tracked,
-					title: pr.title,
-					status,
-					url: pr.html_url,
-					updatedAt: new Date().toISOString(),
-				};
+			if ( synced.changed ) {
+				state.messages[ key ] = synced.entry;
 				stateChanged = true;
 			}
 
@@ -343,20 +443,28 @@ async function main() {
 		}
 
 		if ( status === 'closed' ) {
-			if ( tracked.status !== status || tracked.title !== pr.title ) {
+			const channel = tracked.channel || SLACK_CHANNEL_ID;
+			const messageExists = await slackMessageExists(
+				channel,
+				tracked.slackTs
+			);
+
+			if (
+				messageExists &&
+				( tracked.status !== status || tracked.title !== pr.title )
+			) {
 				console.log(
 					`Updating closed sync PR: ${ tracked.repository }#${ tracked.prNumber }`
 				);
 
 				await updateSlackMessage( pr, tracked.repository, tracked.slackTs );
 
-				state.messages[ key ] = {
-					...tracked,
-					title: pr.title,
-					status,
-					url: pr.html_url,
-					updatedAt: new Date().toISOString(),
-				};
+				state.messages[ key ] = buildStateEntry(
+					pr,
+					tracked.repository,
+					tracked.slackTs,
+					tracked
+				);
 				stateChanged = true;
 			}
 

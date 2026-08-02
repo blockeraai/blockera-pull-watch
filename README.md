@@ -54,10 +54,12 @@ Add these secrets in the `blockera-pull-watch` repository settings:
 ## Slack app setup
 
 1. Create a Slack app in your workspace.
-2. Add the `chat:write` bot scope.
+2. Add the `chat:write` and `channels:history` bot scopes.
 3. Install the app to the workspace.
 4. Invite the bot to the target channel.
 5. Copy the bot token and channel ID into GitHub secrets.
+
+If a notification is deleted manually in Slack, the next workflow run detects the missing message and posts it again.
 
 ## Manual run
 
@@ -65,15 +67,24 @@ Use **Actions → Watch Sync Package Pull Requests → Run workflow** to trigger
 
 After the first successful run, `data/slack-messages.json` is updated via the GitHub Contents API. If this push fails, reruns will post duplicate Slack messages because prior notifications are not tracked.
 
+Do not revert commits titled `bot(watch): update slack message state`. Those commits store Slack message IDs required to avoid duplicate notifications.
+
 ## Troubleshooting duplicate Slack messages
 
 Duplicates usually mean state was not persisted between runs. Check the workflow log for the **Push state changes** step and confirm:
 
-1. `Loaded N tracked Slack message(s) from state.` shows `N > 0` on reruns
+1. `Loaded N tracked Slack message(s) from remote state` shows `N > 0` on reruns
 2. The push step logged `State pushed successfully`
 3. `BLOCKERABOT_PAT` has write access to `blockera-pull-watch`
+4. The latest `data/slack-messages.json` on `master` was not reverted manually
 
 If duplicates were already posted, delete the extra Slack messages manually, then rerun once so the workflow can save the correct state.
+
+To sync state locally after a workflow run:
+
+```bash
+git pull origin master
+```
 
 ## Optional instant updates
 
