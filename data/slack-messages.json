@@ -79,6 +79,26 @@
 			"slackTs": "1785685751.152979",
 			"channel": "C0BMGEA3NRJ",
 			"updatedAt": "2026-08-02T15:49:11.203Z"
+		},
+		"blockeraai/blockera-pro#131": {
+			"repository": "blockeraai/blockera-pro",
+			"prNumber": 131,
+			"title": "Sync package from blockera Repo",
+			"status": "open",
+			"url": "https://github.com/blockeraai/blockera-pro/pull/131",
+			"slackTs": "1785843062.985509",
+			"channel": "C0BMGEA3NRJ",
+			"updatedAt": "2026-08-04T11:31:03.063Z"
+		},
+		"blockeraai/blockera-one#24": {
+			"repository": "blockeraai/blockera-one",
+			"prNumber": 24,
+			"title": "Sync package from blockera Repo",
+			"status": "open",
+			"url": "https://github.com/blockeraai/blockera-one/pull/24",
+			"slackTs": "1785843063.569089",
+			"channel": "C0BMGEA3NRJ",
+			"updatedAt": "2026-08-04T11:31:03.639Z"
 		}
 	}
 }
