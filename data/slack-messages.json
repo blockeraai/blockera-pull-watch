@@ -134,11 +134,11 @@
 			"repository": "blockeraai/blockera-one",
 			"prNumber": 29,
 			"title": "Sync package from blockera-pro Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera-one/pull/29",
 			"slackTs": "1785921436.959199",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-05T09:17:17.012Z"
+			"updatedAt": "2026-08-05T11:05:50.426Z"
 		}
 	}
 }
