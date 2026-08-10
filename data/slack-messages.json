@@ -204,21 +204,21 @@
 			"repository": "blockeraai/blockera",
 			"prNumber": 455,
 			"title": "Sync package from blockera-one Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera/pull/455",
 			"slackTs": "1786362952.516069",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-10T11:55:52.566Z"
+			"updatedAt": "2026-08-10T12:12:54.380Z"
 		},
 		"blockeraai/blockera-pro#140": {
 			"repository": "blockeraai/blockera-pro",
 			"prNumber": 140,
 			"title": "Sync package from blockera-one Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera-pro/pull/140",
 			"slackTs": "1786362952.856049",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-10T11:55:52.904Z"
+			"updatedAt": "2026-08-10T12:12:55.344Z"
 		}
 	}
 }
