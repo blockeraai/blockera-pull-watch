@@ -24,31 +24,31 @@
 			"repository": "blockeraai/blockera-site-toolkit",
 			"prNumber": 99,
 			"title": "Sync package from blockera-one Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera-site-toolkit/pull/99",
 			"slackTs": "1785656408.991239",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-02T07:40:09.044Z"
+			"updatedAt": "2026-08-11T16:30:11.430Z"
 		},
 		"blockeraai/blockera-site-toolkit#98": {
 			"repository": "blockeraai/blockera-site-toolkit",
 			"prNumber": 98,
 			"title": "Sync package from blockera-pro Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera-site-toolkit/pull/98",
 			"slackTs": "1785657145.405519",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-02T07:52:25.475Z"
+			"updatedAt": "2026-08-11T16:30:12.841Z"
 		},
 		"blockeraai/blockera-site-toolkit#96": {
 			"repository": "blockeraai/blockera-site-toolkit",
 			"prNumber": 96,
 			"title": "Sync package from blockera Repo",
-			"status": "open",
+			"status": "closed",
 			"url": "https://github.com/blockeraai/blockera-site-toolkit/pull/96",
 			"slackTs": "1785656409.208209",
 			"channel": "C0BMGEA3NRJ",
-			"updatedAt": "2026-08-02T07:40:09.260Z"
+			"updatedAt": "2026-08-11T16:30:14.077Z"
 		},
 		"blockeraai/blockera#443": {
 			"repository": "blockeraai/blockera",
