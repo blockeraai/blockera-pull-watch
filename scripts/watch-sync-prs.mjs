@@ -1,6 +1,7 @@
 /**
- * Watches blockeraai repositories for "Sync package from {REPO_NAME} Repo" pull requests,
- * posts Slack notifications for new PRs, and deletes Slack messages when PRs are merged or closed.
+ * Watches blockeraai repositories for package-sync PRs (folder-sync titles and
+ * global-packages bump PRs from sync-global-packages-submodule), posts Slack
+ * notifications, and deletes Slack messages when those PRs are merged or closed.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -112,64 +113,210 @@ async function githubRequest( path ) {
 	return response.json();
 }
 
-async function fetchMatchingOpenPRs( repository, titlePattern ) {
+function compileMatchers( config ) {
+	const raw =
+		Array.isArray( config.matchers ) && config.matchers.length
+			? config.matchers
+			: [
+					{
+						id: 'folder-sync',
+						titlePattern: config.titlePattern,
+						slackHeader: 'Package Sync Pull Request',
+					},
+			  ];
+
+	return raw.map( ( matcher ) => ( {
+		id: matcher.id || 'sync',
+		head: matcher.head || '',
+		titlePattern: matcher.titlePattern
+			? new RegExp( matcher.titlePattern )
+			: null,
+		slackHeader: matcher.slackHeader || 'Package Sync Pull Request',
+	} ) );
+}
+
+function findMatcher( pr, matchers ) {
+	return (
+		matchers.find( ( matcher ) => {
+			if ( matcher.head && pr.head?.ref === matcher.head ) {
+				return true;
+			}
+
+			if (
+				matcher.titlePattern &&
+				matcher.titlePattern.test( pr.title )
+			) {
+				return true;
+			}
+
+			return false;
+		} ) || null
+	);
+}
+
+function slackHeaderFor( pr, matchers, existing = {} ) {
+	const matcher = findMatcher( pr, matchers );
+
+	return (
+		existing.slackHeader ||
+		matcher?.slackHeader ||
+		'Package Sync Pull Request'
+	);
+}
+
+function productSlug( repository ) {
+	return ( repository || '' ).split( '/' )[ 1 ] || repository;
+}
+
+function slackEscape( text ) {
+	return String( text || '' )
+		.replaceAll( '&', '&amp;' )
+		.replaceAll( '<', '&lt;' )
+		.replaceAll( '>', '&gt;' );
+}
+
+function slackField( label, value ) {
+	return {
+		type: 'mrkdwn',
+		text: `*${ label }*\n${ value }`,
+	};
+}
+
+function parseGpPinFromBody( body ) {
+	const match = String( body || '' ).match(
+		/packages\/global-packages` to \[`([a-f0-9]+)`\]\((https:\/\/github\.com\/[^)\s]+)\)/
+	);
+
+	if ( ! match ) {
+		return { sha: '', url: '' };
+	}
+
+	return { sha: match[ 1 ], url: match[ 2 ] };
+}
+
+function buildSlackPayload( pr, repository, matchers, existing = {} ) {
+	const matcher = findMatcher( pr, matchers );
+	const status = getPRStatus( pr );
+	const header = slackHeaderFor( pr, matchers, existing );
+	const product = productSlug( repository );
+	const head = pr.head?.ref ? `\`${ slackEscape( pr.head.ref ) }\`` : '—';
+	const base = pr.base?.ref ? `\`${ slackEscape( pr.base.ref ) }\`` : '—';
+	const author = pr.user?.login
+		? `\`${ slackEscape( pr.user.login ) }\``
+		: '—';
+	const prLink = `<${ pr.html_url }|#${ pr.number }>`;
+	const isGp = matcher?.id === 'global-packages';
+	const pin = parseGpPinFromBody( pr.body );
+	const pinLabel = pin.sha
+		? pin.url
+			? `<${ pin.url }|\`${ slackEscape( pin.sha ) }\`>`
+			: `\`${ slackEscape( pin.sha ) }\``
+		: '—';
+
+	const intro = isGp
+		? `*${ slackEscape( product ) }* needs a \`packages/global-packages\` pin review. Merge when CI is green — later GP \`master\` commits update this same PR.`
+		: `*${ slackEscape( product ) }* has a package-sync PR ready for review.`;
+
+	const fields = isGp
+		? [
+				slackField( 'Consumer', `\`${ slackEscape( repository ) }\`` ),
+				slackField( 'Pull request', prLink ),
+				slackField( 'Head', head ),
+				slackField( 'GP pin', pinLabel ),
+				slackField( 'Base', base ),
+				slackField( 'Opened by', author ),
+				slackField( 'Status', statusEmoji( status ) ),
+				slackField(
+					'Draft',
+					pr.draft ? ':large_yellow_circle: Yes' : ':white_circle: No'
+				),
+		  ]
+		: [
+				slackField( 'Repository', `\`${ slackEscape( repository ) }\`` ),
+				slackField( 'Pull request', prLink ),
+				slackField( 'Title', slackEscape( pr.title ) ),
+				slackField( 'Status', statusEmoji( status ) ),
+		  ];
+
+	const actions = [
+		{
+			type: 'button',
+			style: 'primary',
+			text: {
+				type: 'plain_text',
+				text: isGp ? 'Review pin PR' : 'View Pull Request',
+				emoji: true,
+			},
+			url: pr.html_url,
+		},
+	];
+
+	if ( isGp ) {
+		actions.push( {
+			type: 'button',
+			text: { type: 'plain_text', text: 'Checks', emoji: true },
+			url: `${ pr.html_url }/checks`,
+		} );
+
+		if ( pin.url ) {
+			actions.push( {
+				type: 'button',
+				text: { type: 'plain_text', text: 'GP commit', emoji: true },
+				url: pin.url,
+			} );
+		}
+	}
+
+	const blocks = [
+		{
+			type: 'header',
+			text: {
+				type: 'plain_text',
+				text: isGp ? 'Global Packages pin' : header,
+				emoji: true,
+			},
+		},
+		{
+			type: 'section',
+			text: { type: 'mrkdwn', text: intro },
+		},
+		{ type: 'section', fields },
+		{ type: 'divider' },
+		{
+			type: 'context',
+			elements: [
+				{
+					type: 'mrkdwn',
+					text: isGp
+						? ':package: `sync-global-packages-submodule` · one bump PR per consumer'
+						: ':inbox_tray: folder-sync package PR',
+				},
+			],
+		},
+		{ type: 'actions', elements: actions },
+	];
+
+	const text = isGp
+		? `[${ product }] GP pin ${ prLink } (${ status })`
+		: `[${ repository }] #${ pr.number }: ${ pr.title } (${ status })`;
+
+	return { text, blocks, header };
+}
+
+async function fetchMatchingOpenPRs( repository, matchers ) {
 	const pulls = await githubRequest(
 		`/repos/${ repository }/pulls?state=open&per_page=100&sort=updated&direction=desc`
 	);
 
-	return pulls.filter( ( pr ) => titlePattern.test( pr.title ) );
+	return pulls.filter( ( pr ) => findMatcher( pr, matchers ) );
 }
 
 async function fetchPullRequest( repository, prNumber ) {
 	return githubRequest( `/repos/${ repository }/pulls/${ prNumber }` );
 }
 
-async function postSlackMessage( pr, repository ) {
-	const status = getPRStatus( pr );
-	const blocks = [
-		{
-			type: 'header',
-			text: {
-				type: 'plain_text',
-				text: 'Package Sync Pull Request',
-				emoji: true,
-			},
-		},
-		{
-			type: 'section',
-			fields: [
-				{
-					type: 'mrkdwn',
-					text: `*Repository:*\n\`${ repository }\``,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*PR ID:*\n#${ pr.number }`,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*Title:*\n${ pr.title }`,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*Status:*\n${ statusEmoji( status ) }`,
-				},
-			],
-		},
-		{
-			type: 'actions',
-			elements: [
-				{
-					type: 'button',
-					text: {
-						type: 'plain_text',
-						text: 'View Pull Request',
-					},
-					url: pr.html_url,
-				},
-			],
-		},
-	];
+async function postSlackMessage( pr, repository, matchers, existing = {} ) {
+	const payload = buildSlackPayload( pr, repository, matchers, existing );
 
 	const response = await fetch( 'https://slack.com/api/chat.postMessage', {
 		method: 'POST',
@@ -179,8 +326,8 @@ async function postSlackMessage( pr, repository ) {
 		},
 		body: JSON.stringify( {
 			channel: SLACK_CHANNEL_ID,
-			text: `[${ repository }] #${ pr.number }: ${ pr.title } (${ status })`,
-			blocks,
+			text: payload.text,
+			blocks: payload.blocks,
 		} ),
 	} );
 
@@ -242,52 +389,8 @@ async function deleteSlackMessage( slackTs ) {
 	}
 }
 
-async function updateSlackMessage( pr, repository, slackTs ) {
-	const status = getPRStatus( pr );
-	const blocks = [
-		{
-			type: 'header',
-			text: {
-				type: 'plain_text',
-				text: 'Package Sync Pull Request',
-				emoji: true,
-			},
-		},
-		{
-			type: 'section',
-			fields: [
-				{
-					type: 'mrkdwn',
-					text: `*Repository:*\n\`${ repository }\``,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*PR ID:*\n#${ pr.number }`,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*Title:*\n${ pr.title }`,
-				},
-				{
-					type: 'mrkdwn',
-					text: `*Status:*\n${ statusEmoji( status ) }`,
-				},
-			],
-		},
-		{
-			type: 'actions',
-			elements: [
-				{
-					type: 'button',
-					text: {
-						type: 'plain_text',
-						text: 'View Pull Request',
-					},
-					url: pr.html_url,
-				},
-			],
-		},
-	];
+async function updateSlackMessage( pr, repository, slackTs, matchers, existing = {} ) {
+	const payload = buildSlackPayload( pr, repository, matchers, existing );
 
 	const response = await fetch( 'https://slack.com/api/chat.update', {
 		method: 'POST',
@@ -298,8 +401,8 @@ async function updateSlackMessage( pr, repository, slackTs ) {
 		body: JSON.stringify( {
 			channel: SLACK_CHANNEL_ID,
 			ts: slackTs,
-			text: `[${ repository }] #${ pr.number }: ${ pr.title } (${ status })`,
-			blocks,
+			text: payload.text,
+			blocks: payload.blocks,
 		} ),
 	} );
 
@@ -312,23 +415,38 @@ async function updateSlackMessage( pr, repository, slackTs ) {
 	return data.ok;
 }
 
-function buildStateEntry( pr, repository, slackTs, existing = {} ) {
+function buildStateEntry(
+	pr,
+	repository,
+	slackTs,
+	existing = {},
+	slackHeader
+) {
 	return {
 		...existing,
 		repository,
 		prNumber: pr.number,
 		title: pr.title,
+		head: pr.head?.ref || existing.head || '',
+		gpPin: parseGpPinFromBody( pr.body ).sha,
+		draft: Boolean( pr.draft ),
 		status: getPRStatus( pr ),
 		url: pr.html_url,
 		slackTs,
 		channel: SLACK_CHANNEL_ID,
+		slackHeader:
+			slackHeader ||
+			existing.slackHeader ||
+			'Package Sync Pull Request',
+		layoutVersion: 2,
 		updatedAt: new Date().toISOString(),
 	};
 }
 
-async function syncTrackedSlackMessage( pr, repository, existing ) {
+async function syncTrackedSlackMessage( pr, repository, existing, matchers ) {
 	const channel = existing.channel || SLACK_CHANNEL_ID;
 	const status = getPRStatus( pr );
+	const header = slackHeaderFor( pr, matchers, existing );
 	const messageExists = await slackMessageExists( channel, existing.slackTs );
 
 	if ( ! messageExists ) {
@@ -336,24 +454,50 @@ async function syncTrackedSlackMessage( pr, repository, existing ) {
 			`Slack message missing for ${ repository }#${ pr.number }, reposting...`
 		);
 
-		const slackTs = await postSlackMessage( pr, repository );
+		const slackTs = await postSlackMessage(
+			pr,
+			repository,
+			matchers,
+			existing
+		);
 
 		return {
 			changed: true,
-			entry: buildStateEntry( pr, repository, slackTs, existing ),
+			entry: buildStateEntry( pr, repository, slackTs, existing, header ),
 		};
 	}
 
-	if ( existing.status !== status || existing.title !== pr.title ) {
+	const pinSha = parseGpPinFromBody( pr.body ).sha;
+
+	if (
+		existing.status !== status ||
+		existing.title !== pr.title ||
+		existing.head !== ( pr.head?.ref || existing.head || '' ) ||
+		existing.gpPin !== pinSha ||
+		Boolean( existing.draft ) !== Boolean( pr.draft ) ||
+		existing.layoutVersion !== 2
+	) {
 		console.log(
 			`Updating sync PR status: ${ repository }#${ pr.number } (${ existing.status } -> ${ status })`
 		);
 
-		await updateSlackMessage( pr, repository, existing.slackTs );
+		await updateSlackMessage(
+			pr,
+			repository,
+			existing.slackTs,
+			matchers,
+			existing
+		);
 
 		return {
 			changed: true,
-			entry: buildStateEntry( pr, repository, existing.slackTs, existing ),
+			entry: buildStateEntry(
+				pr,
+				repository,
+				existing.slackTs,
+				existing,
+				header
+			),
 		};
 	}
 
@@ -370,7 +514,7 @@ async function main() {
 
 	const config = loadJson( CONFIG_PATH );
 	const state = await loadState();
-	const titlePattern = new RegExp( config.titlePattern );
+	const matchers = compileMatchers( config );
 	let stateChanged = false;
 
 	const trackedKeys = new Set( Object.keys( state.messages ) );
@@ -379,25 +523,33 @@ async function main() {
 	for ( const repository of config.repositories ) {
 		console.log( `Checking ${ repository }...` );
 
-		const openPRs = await fetchMatchingOpenPRs( repository, titlePattern );
+		const openPRs = await fetchMatchingOpenPRs( repository, matchers );
 
 		for ( const pr of openPRs ) {
 			const key = makeStateKey( repository, pr.number );
 			activeKeys.add( key );
 
 			const existing = state.messages[ key ];
+			const header = slackHeaderFor( pr, matchers, existing );
 
 			if ( ! existing ) {
 				console.log(
 					`New sync PR detected: ${ repository }#${ pr.number } - ${ pr.title }`
 				);
 
-				const slackTs = await postSlackMessage( pr, repository );
+				const slackTs = await postSlackMessage(
+					pr,
+					repository,
+					matchers,
+					existing
+				);
 
 				state.messages[ key ] = buildStateEntry(
 					pr,
 					repository,
-					slackTs
+					slackTs,
+					{},
+					header
 				);
 				stateChanged = true;
 				continue;
@@ -406,7 +558,8 @@ async function main() {
 			const synced = await syncTrackedSlackMessage(
 				pr,
 				repository,
-				existing
+				existing,
+				matchers
 			);
 
 			if ( synced.changed ) {
@@ -431,7 +584,8 @@ async function main() {
 			const synced = await syncTrackedSlackMessage(
 				pr,
 				tracked.repository,
-				tracked
+				tracked,
+				matchers
 			);
 
 			if ( synced.changed ) {
@@ -442,37 +596,8 @@ async function main() {
 			continue;
 		}
 
-		if ( status === 'closed' ) {
-			const channel = tracked.channel || SLACK_CHANNEL_ID;
-			const messageExists = await slackMessageExists(
-				channel,
-				tracked.slackTs
-			);
-
-			if (
-				messageExists &&
-				( tracked.status !== status || tracked.title !== pr.title )
-			) {
-				console.log(
-					`Updating closed sync PR: ${ tracked.repository }#${ tracked.prNumber }`
-				);
-
-				await updateSlackMessage( pr, tracked.repository, tracked.slackTs );
-
-				state.messages[ key ] = buildStateEntry(
-					pr,
-					tracked.repository,
-					tracked.slackTs,
-					tracked
-				);
-				stateChanged = true;
-			}
-
-			continue;
-		}
-
 		console.log(
-			`Removing Slack message for merged PR ${ tracked.repository }#${ tracked.prNumber }`
+			`Removing Slack message for ${ status } PR ${ tracked.repository }#${ tracked.prNumber }`
 		);
 
 		await deleteSlackMessage( tracked.slackTs );

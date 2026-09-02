@@ -1,9 +1,21 @@
 {
-	"titlePattern": "^Sync package from .+ Repo$",
 	"repositories": [
 		"blockeraai/blockera",
 		"blockeraai/blockera-pro",
 		"blockeraai/blockera-one",
 		"blockeraai/blockera-site-toolkit"
+	],
+	"matchers": [
+		{
+			"id": "folder-sync",
+			"titlePattern": "^Sync package from .+ Repo$",
+			"slackHeader": "Package Sync Pull Request"
+		},
+		{
+			"id": "global-packages",
+			"head": "chore/bump-global-packages",
+			"titlePattern": "^submodule: update global-packages",
+			"slackHeader": "Global Packages pin"
+		}
 	]
 }

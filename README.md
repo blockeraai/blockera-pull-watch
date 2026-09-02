@@ -1,6 +1,15 @@
 # blockera-pull-watch
 
-Central watcher for Blockera package-sync pull requests. It monitors `blockeraai` repositories for pull requests titled `Sync package from {REPO_NAME} Repo`, posts details to Slack, and removes the Slack message after the pull request is merged or closed.
+Central watcher for Blockera package-sync pull requests. It monitors `blockeraai`
+consumer repositories, posts matching PRs to Slack, and removes the Slack
+message after a pull request is merged or closed.
+
+It watches two kinds of PRs:
+
+1. Folder-sync titles from [`blockera-folder-sync`](https://github.com/blockeraai/blockera-folder-sync)
+2. Global-packages bump PRs from consumer
+   `sync-global-packages-submodule.yml` (`chore/bump-global-packages`, title
+   `submodule: update global-packages`)
 
 ## Watched repositories
 
@@ -11,18 +20,15 @@ Configured in [`config/repositories.json`](config/repositories.json):
 - `blockeraai/blockera-one`
 - `blockeraai/blockera-site-toolkit`
 
-## Pull request pattern
+## Pull request matchers
 
-The watcher matches PR titles created by [`blockera-folder-sync`](https://github.com/blockeraai/blockera-folder-sync):
+Matchers live in `config/repositories.json` (`matchers`). A PR matches if its
+**head branch** equals `head` **or** its title matches `titlePattern`.
 
-```text
-Sync package from {REPO_NAME} Repo
-```
-
-Examples:
-
-- `Sync package from blockera Repo`
-- `Sync package from blockera-one Repo`
+| Kind | How it matches | Slack header |
+| --- | --- | --- |
+| Folder sync | Title `Sync package from {REPO_NAME} Repo` | Package Sync Pull Request |
+| Global-packages bump | Head `chore/bump-global-packages`, or title starting with `submodule: update global-packages` (covers older titles that also had a commit count / gitlink) | Global Packages pin (paired fields, pin SHA, Review / Checks / GP commit) |
 
 ## Extracted PR data
 
@@ -31,15 +37,15 @@ For each matching pull request, the workflow tracks:
 - PR ID (`number`)
 - PR title
 - PR status (`open`, `closed`, or `merged`)
+- For global-packages bump PRs: head branch, GP pin SHA (from the PR body), draft flag
 
 ## How it works
 
 1. The GitHub Actions workflow runs every 10 minutes (and on manual dispatch).
-2. It scans each configured repository for open PRs matching the title pattern.
-3. New PRs trigger a Slack message with repository, PR ID, title, status, and a link.
-4. When a tracked PR is merged, the corresponding Slack message is deleted.
-5. Closed (not merged) PRs keep their Slack message with an updated status.
-6. Slack message timestamps are stored in [`data/slack-messages.json`](data/slack-messages.json) so messages can be removed reliably across runs.
+2. It scans each configured repository for open PRs matching the configured matchers.
+3. New PRs trigger a Slack message. Global-packages bump PRs use a two-column layout (consumer, PR, head, GP pin, base, author) plus Review / Checks / GP commit buttons.
+4. When a tracked PR is merged **or closed**, the corresponding Slack message is deleted.
+5. Slack message timestamps are stored in [`data/slack-messages.json`](data/slack-messages.json) so messages can be removed reliably across runs.
 
 ## Required GitHub secrets
 

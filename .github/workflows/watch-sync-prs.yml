@@ -1,5 +1,8 @@
 name: Watch Sync Package Pull Requests
 
+# Polls consumers for folder-sync PRs and global-packages bump PRs
+# (sync-global-packages-submodule.yml).
+
 on:
     schedule:
         # Poll every 10 minutes for new sync PRs and merged/closed PRs.
