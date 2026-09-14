@@ -294,6 +294,21 @@
 			"slackHeader": "Global Packages pin",
 			"layoutVersion": 2,
 			"updatedAt": "2026-09-13T06:36:50.453Z"
+		},
+		"blockeraai/blockera-one#63": {
+			"repository": "blockeraai/blockera-one",
+			"prNumber": 63,
+			"title": "submodule: update global-packages",
+			"head": "chore/bump-global-packages",
+			"gpPin": "ac6e8ecf",
+			"draft": false,
+			"status": "open",
+			"url": "https://github.com/blockeraai/blockera-one/pull/63",
+			"slackTs": "1789368411.200079",
+			"channel": "C0BMGEA3NRJ",
+			"slackHeader": "Global Packages pin",
+			"layoutVersion": 2,
+			"updatedAt": "2026-09-14T06:46:51.232Z"
 		}
 	}
 }
